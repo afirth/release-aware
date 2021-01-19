@@ -180,9 +180,9 @@ func getHelmhubRepositories() []string {
 }
 
 func getHelmhubRelease(repositoryName string) (Release, error) {
-	//	curl https://hub.helm.sh/api/chartsvc/v1/charts/stable/sealed-secrets | jq '.data.relationships.latestChartVersion.data.version'
+	//	curl https://artifacthub.io/api/v1/packages/helm/vmware-tanzu/velero | jq '.version'
 
-	baseUrl := "https://hub.helm.sh/api/chartsvc/v1/charts/"
+	baseUrl := "https://artifacthub.io/api/v1/packages/helm/"
 	url := (baseUrl + repositoryName)
 
 	requestOptions := &grequests.RequestOptions{}
@@ -205,13 +205,14 @@ func getHelmhubRelease(repositoryName string) (Release, error) {
 
 func parseHelmhubRelease(resp string) Release {
 	var helmRelease Release
+	var unixTime = gjson.Get(resp, "created_at").Int()
 
-	helmRelease.Name = gjson.Get(resp, "data.attributes.name").String()
-	helmRelease.TagName = "chart: " + gjson.Get(resp, "data.relationships.latestChartVersion.data.version").String()
-	helmRelease.AppVersionName = " - app: " + gjson.Get(resp, "data.relationships.latestChartVersion.data.app_version").String()
-	helmRelease.PublishedAt = gjson.Get(resp, "data.relationships.latestChartVersion.data.created").Time()
-	helmRelease.RepositoryName = gjson.Get(resp, "data.attributes.repo.name").String() + "/" + helmRelease.Name
-	helmRelease.HtmlUrl = "https://hub.helm.sh/charts/" + helmRelease.RepositoryName + "/" + gjson.Get(resp, "data.relationships.latestChartVersion.data.version").String()
+	helmRelease.Name = gjson.Get(resp, "normalized_name").String()
+	helmRelease.TagName = "chart: " + gjson.Get(resp, "version").String()
+	helmRelease.AppVersionName = " - app: " + gjson.Get(resp, "app_version").String()
+	helmRelease.PublishedAt = time.Unix(unixTime, 0)
+	helmRelease.RepositoryName = gjson.Get(resp, "repository.name").String()
+	helmRelease.HtmlUrl = "https://artifacthub.io/packages/helm/" + helmRelease.RepositoryName + "/" + helmRelease.Name + "/" + gjson.Get(resp, "version").String()
 	helmRelease.Type = "Helm chart"
 
 	return helmRelease
@@ -226,39 +227,39 @@ func main() {
 		for _, repositoryName := range getGithubRepositories() {
 			release, err := getGithubRelease(repositoryName)
 			if err != nil {
-				c.JSON(500, gin.H{
-					"error": err.Error(),
-				})
-				return
-			}
+				release.RepositoryName = repositoryName
+				release.TagName = err.Error()
+				release.Severity = "error"
+			} else {
 
-			days := int(time.Now().Sub(release.PublishedAt).Hours() / 24)
-			release.Days = days
-			release.Severity = getSeverity(days)
-			release.RepositoryName = repositoryName
+				days := int(time.Now().Sub(release.PublishedAt).Hours() / 24)
+				release.Days = days
+				release.Severity = getSeverity(days)
+				release.RepositoryName = repositoryName
+			}
 			releases = append(releases, release)
 		}
 
 		for _, repositoryName := range getHelmhubRepositories() {
 			release, err := getHelmhubRelease(repositoryName)
 			if err != nil {
-				c.JSON(500, gin.H{
-					"error": err.Error(),
-				})
-				return
-			}
-
-			days := int(time.Now().Sub(release.PublishedAt).Hours() / 24)
-
-			if strings.HasPrefix(release.RepositoryName, "stable") || strings.HasPrefix(release.RepositoryName, "loki") || strings.HasPrefix(release.RepositoryName, "nginx") {
-				// Charts from the loki, nginx and stable repos always display 0 days since last release
-				release.Severity = "unknown"
-				release.PublishedAt = time.Now().AddDate(0, -1, 0)
+				release.RepositoryName = repositoryName
+				release.TagName = err.Error()
+				release.Severity = "error"
 			} else {
-				release.Severity = getSeverity(days)
+
+				days := int(time.Now().Sub(release.PublishedAt).Hours() / 24)
+
+				if strings.HasPrefix(release.RepositoryName, "stable") || strings.HasPrefix(release.RepositoryName, "loki") || strings.HasPrefix(release.RepositoryName, "nginx") {
+					// Charts from the loki, nginx and stable repos always display 0 days since last release
+					release.Severity = "unknown"
+					release.PublishedAt = time.Now().AddDate(0, -1, 0)
+				} else {
+					release.Severity = getSeverity(days)
+				}
+				release.Days = days
+				release.RepositoryName = repositoryName
 			}
-			release.Days = days
-			release.RepositoryName = repositoryName
 			releases = append(releases, release)
 		}
 
