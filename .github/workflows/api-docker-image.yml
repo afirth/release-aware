@@ -24,6 +24,6 @@ jobs:
       run: |
         cd ./server
         docker build . --file Dockerfile --tag sdpequinor/release-aware-api:latest
-        echo ${{ secrets.DOCKERHUB_PAT }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
-        docker push sdpequinor/release-aware-api:latest
-        docker logout
+      # echo ${{ secrets.DOCKERHUB_PAT }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
+      # docker push sdpequinor/release-aware-api:latest
+      # docker logout
